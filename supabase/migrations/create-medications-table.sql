@@ -46,3 +46,5 @@ CREATE TRIGGER update_medications_updated_at
   BEFORE UPDATE ON medications
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+

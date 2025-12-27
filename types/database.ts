@@ -52,6 +52,20 @@ export interface Medication {
   updated_at: string
 }
 
+export interface Insurance {
+  id: string
+  provider_name: string
+  policy_id: string
+  insurance_type: string | null
+  price: number | null
+  currency: string | null
+  logo_url: string | null
+  pdf_url: string | null
+  coverage_data: Record<string, any> | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -74,6 +88,11 @@ export interface Database {
         Row: Medication
         Insert: Omit<Medication, 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Omit<Medication, 'id' | 'created_at' | 'updated_at'>>
+      }
+      insurances: {
+        Row: Insurance
+        Insert: Omit<Insurance, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Insurance, 'id' | 'created_at' | 'updated_at'>>
       }
     }
   }
