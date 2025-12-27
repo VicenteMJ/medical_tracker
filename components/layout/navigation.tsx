@@ -13,6 +13,7 @@ export function Navigation() {
             <NavLink href="/results">Results</NavLink>
             <NavLink href="/bills">Bills</NavLink>
             <NavLink href="/medications">Medications</NavLink>
+            <NavLink href="/insurances">Insurance</NavLink>
           </div>
         </div>
       </div>

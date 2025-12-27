@@ -22,3 +22,5 @@ export default async function MedicationPage({ params }: MedicationPageProps) {
     </div>
   )
 }
+
+
