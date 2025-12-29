@@ -4,10 +4,12 @@ import { useState, useRef } from 'react'
 import { Insurance } from '@/types/database'
 import { uploadInsurancePDF } from '@/lib/storage'
 import { getInsuranceLogo } from '@/lib/insurance-logos'
+import { analyzeInsuranceCoverage } from '@/lib/insurances'
+import { useRouter } from 'next/navigation'
 
 interface InsuranceFormProps {
   insurance?: Insurance
-  onSubmit: (data: Omit<Insurance, 'id' | 'created_at' | 'updated_at'>) => Promise<void>
+  onSubmit: (data: Omit<Insurance, 'id' | 'created_at' | 'updated_at'>) => Promise<Insurance | void>
   onCancel: () => void
 }
 
@@ -60,8 +62,10 @@ export function InsuranceForm({ insurance, onSubmit, onCancel }: InsuranceFormPr
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const router = useRouter()
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string>('')
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [showCustomProvider, setShowCustomProvider] = useState(
     insurance?.provider_name ? !INSURANCE_PROVIDERS.includes(insurance.provider_name as any) : false
   )
@@ -149,7 +153,7 @@ export function InsuranceForm({ insurance, onSubmit, onCancel }: InsuranceFormPr
 
       const price = formData.price ? parseFloat(formData.price) : null
 
-      await onSubmit({
+      const result = await onSubmit({
         provider_name: formData.provider_name.trim(),
         policy_id: formData.policy_id.trim(),
         insurance_type: formData.insurance_type || null,
@@ -159,11 +163,44 @@ export function InsuranceForm({ insurance, onSubmit, onCancel }: InsuranceFormPr
         pdf_url: pdfUrl,
         coverage_data: formData.coverage_data,
       })
+
+      // Auto-trigger analysis if PDF was uploaded and no coverage data exists
+      // Only for new insurance (when result is returned)
+      if (pdfUrl && !formData.coverage_data && result && 'id' in result) {
+        setIsAnalyzing(true)
+        setUploadProgress('Analyzing coverage...')
+        try {
+          await analyzeInsuranceCoverage(result.id)
+          setUploadProgress('Analysis complete!')
+          router.refresh()
+        } catch (analysisError) {
+          // Don't fail the form submission if analysis fails
+          console.error('Analysis failed:', analysisError)
+          // Show a non-blocking message
+          setUploadProgress('Upload complete. Analysis can be run manually.')
+        } finally {
+          setIsAnalyzing(false)
+          setTimeout(() => {
+            setUploadProgress('')
+            // Navigate after a short delay to show completion message
+            if (!insurance) {
+              router.push('/insurances')
+              router.refresh()
+            }
+          }, 2000)
+        }
+      } else if (!insurance && !result) {
+        // If no PDF or no result returned, navigate immediately
+        router.push('/insurances')
+        router.refresh()
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setIsSubmitting(false)
-      setUploadProgress('')
+      if (!isAnalyzing) {
+        setUploadProgress('')
+      }
     }
   }
 
@@ -355,10 +392,19 @@ export function InsuranceForm({ insurance, onSubmit, onCancel }: InsuranceFormPr
             disabled={uploading || isSubmitting}
           />
           {uploadProgress && (
-            <p className="text-sm text-blue-600 dark:text-blue-400">{uploadProgress}</p>
+            <div className="flex items-center space-x-2">
+              {(isAnalyzing || uploading) && (
+                <svg className="animate-spin h-4 w-4 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              )}
+              <p className="text-sm text-blue-600 dark:text-blue-400">{uploadProgress}</p>
+            </div>
           )}
           <p className="text-xs text-gray-500 dark:text-gray-400">
             Upload a PDF file with your insurance policy information, or leave blank if you don't have a file.
+            {!insurance && ' Coverage will be analyzed automatically after upload.'}
           </p>
         </div>
 
