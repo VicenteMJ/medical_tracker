@@ -10,12 +10,13 @@ function NewInsuranceForm() {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleSubmit = async (data: Omit<Insurance, 'id' | 'created_at' | 'updated_at'>) => {
+  const handleSubmit = async (data: Omit<Insurance, 'id' | 'created_at' | 'updated_at'>): Promise<Insurance> => {
     setIsSubmitting(true)
     try {
-      await createInsurance(data)
-      router.push('/insurances')
-      router.refresh()
+      const createdInsurance = await createInsurance(data)
+      // Don't navigate immediately - let the form handle analysis first
+      // The form will handle navigation after analysis completes
+      return createdInsurance
     } catch (error) {
       throw error
     } finally {

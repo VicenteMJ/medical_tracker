@@ -73,3 +73,30 @@ export async function deleteInsurance(id: string): Promise<void> {
   }
 }
 
+/**
+ * Analyzes insurance coverage from PDF using AI
+ * @param insuranceId - The ID of the insurance to analyze
+ * @returns The updated insurance with coverage_data populated
+ */
+export async function analyzeInsuranceCoverage(insuranceId: string): Promise<Insurance> {
+  try {
+    const response = await fetch('/api/insurance/analyze-coverage', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ insuranceId }),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(errorData.error || `Failed to analyze coverage: ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    return data.insurance
+  } catch (error) {
+    throw new Error(`Failed to analyze insurance coverage: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
