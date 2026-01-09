@@ -1,19 +1,31 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Insurance } from '@/types/database'
-import { updateInsurance, analyzeInsuranceCoverage } from '@/lib/insurances'
+import { Insurance, InsuranceCoverage, InsuranceRawAnalysis } from '@/types/database'
+import { updateInsurance, analyzeInsuranceCoverage, getInsuranceCoverages, getRawAnalysis, deleteInsurance } from '@/lib/insurances'
 import { useRouter } from 'next/navigation'
 import { getInsuranceLogo } from '@/lib/insurance-logos'
 
 const INSURANCE_TYPES = [
-  'Fonasa',
   'Isapre',
-  'Complementario',
+  'Fonasa',
+  'Seguro Complementario',
+  'Seguro Dental',
+  'Seguro de Vida',
+  'Seguro de Accidentes',
+  'Seguro Catastrófico',
+  'Seguro Oncológico',
+] as const
+
+const COVERAGE_TYPES = [
+  'Consultas médicas y exámenes',
+  'Medicamentos',
+  'Hospitalizaciones',
   'Dental',
-  'Oncológico',
-  'Accidentes personales',
-  'Catastrófico',
+  'Salud mental',
+  'Vida',
+  'Accidentes',
+  'Visión',
 ] as const
 
 const INSURANCE_PROVIDERS = [
@@ -62,6 +74,12 @@ export function CoverageDrawer({ insurance, isOpen, onClose }: CoverageDrawerPro
   const [isSaving, setIsSaving] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [normalizedCoverages, setNormalizedCoverages] = useState<InsuranceCoverage[]>([])
+  const [rawAnalysis, setRawAnalysis] = useState<InsuranceRawAnalysis | null>(null)
+  const [showRawAnalysis, setShowRawAnalysis] = useState(false)
+  const [loadingCoverages, setLoadingCoverages] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Initialize form data when insurance changes
   useEffect(() => {
@@ -70,15 +88,38 @@ export function CoverageDrawer({ insurance, isOpen, onClose }: CoverageDrawerPro
         insurance_type: insurance.insurance_type || '',
         provider_name: insurance.provider_name || '',
         policy_id: insurance.policy_id || '',
+        coverage_types: insurance.coverage_types || [],
         price: insurance.price?.toString() || '',
         currency: insurance.currency || 'CLP',
         pdf_url: insurance.pdf_url || '',
       })
       setShowCustomProvider(insurance.provider_name ? !INSURANCE_PROVIDERS.includes(insurance.provider_name as any) : false)
+      
+      // Load normalized coverages and raw analysis
+      loadCoverageData(insurance.id)
     }
     setIsEditing(false)
     setError(null)
+    setShowDeleteConfirm(false)
   }, [insurance])
+
+  // Load normalized coverages and raw analysis
+  const loadCoverageData = async (insuranceId: string) => {
+    setLoadingCoverages(true)
+    try {
+      const [coverages, raw] = await Promise.all([
+        getInsuranceCoverages(insuranceId),
+        getRawAnalysis(insuranceId),
+      ])
+      setNormalizedCoverages(coverages)
+      setRawAnalysis(raw)
+    } catch (err) {
+      console.error('Failed to load coverage data:', err)
+      // Don't show error to user, just log it
+    } finally {
+      setLoadingCoverages(false)
+    }
+  }
 
   // Close on Escape key
   useEffect(() => {
@@ -142,6 +183,7 @@ export function CoverageDrawer({ insurance, isOpen, onClose }: CoverageDrawerPro
         insurance_type: formData.insurance_type || null,
         provider_name: formData.provider_name.trim(),
         policy_id: formData.policy_id.trim(),
+        coverage_types: (formData.coverage_types && formData.coverage_types.length > 0) ? formData.coverage_types : null,
         price: price,
         currency: formData.price ? formData.currency : null,
         pdf_url: formData.pdf_url.trim() || null,
@@ -170,6 +212,7 @@ export function CoverageDrawer({ insurance, isOpen, onClose }: CoverageDrawerPro
     }
     setIsEditing(false)
     setError(null)
+    setShowDeleteConfirm(false)
   }
 
   const handleAnalyzeCoverage = async () => {
@@ -180,6 +223,8 @@ export function CoverageDrawer({ insurance, isOpen, onClose }: CoverageDrawerPro
 
     try {
       await analyzeInsuranceCoverage(insurance.id)
+      // Reload coverage data after analysis
+      await loadCoverageData(insurance.id)
       router.refresh()
       // Small delay to allow refresh
       setTimeout(() => {
@@ -201,71 +246,198 @@ export function CoverageDrawer({ insurance, isOpen, onClose }: CoverageDrawerPro
     }
   }
 
-  const renderCoverageData = () => {
-    if (!insurance.coverage_data) {
+  const handleDelete = async () => {
+    if (!insurance) return
+
+    setIsDeleting(true)
+    setError(null)
+    try {
+      await deleteInsurance(insurance.id)
+      onClose()
+      router.push('/insurances')
+      router.refresh()
+    } catch (error) {
+      console.error('Delete insurance error:', error)
+      setError(error instanceof Error ? error.message : 'Failed to delete insurance')
+      setIsDeleting(false)
+      setShowDeleteConfirm(false)
+    }
+  }
+
+  const renderNormalizedCoverages = () => {
+    if (loadingCoverages) {
+      return (
+        <div className="text-center py-8">
+          <div className="flex items-center justify-center space-x-2">
+            <svg className="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span className="text-gray-600 dark:text-gray-400">Loading coverage data...</span>
+          </div>
+        </div>
+      )
+    }
+
+    if (normalizedCoverages.length === 0) {
       return (
         <div className="text-center py-8">
           <p className="text-gray-500 dark:text-gray-400">
-            No coverage data available yet.
+            No normalized coverage data available yet.
           </p>
           <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
-            Coverage information will be extracted from the PDF document.
+            {insurance.pdf_url 
+              ? 'Click "Analyze Coverage" to extract coverage information from the PDF document.'
+              : 'Upload a PDF document and analyze it to extract coverage information.'}
+          </p>
+          {/* Fallback to legacy coverage_data if available */}
+          {insurance.coverage_data && renderLegacyCoverageData()}
+        </div>
+      )
+    }
+
+    // Group coverages by domain
+    const coveragesByDomain = normalizedCoverages.reduce((acc, coverage) => {
+      const domain = coverage.coverage_domain
+      if (!acc[domain]) {
+        acc[domain] = []
+      }
+      acc[domain].push(coverage)
+      return acc
+    }, {} as Record<string, InsuranceCoverage[]>)
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+          <p className="text-sm text-blue-800 dark:text-blue-200">
+            <strong>Note:</strong> These are possible coverage matches based on AI analysis. Coverage is not guaranteed and may vary based on specific circumstances.
           </p>
         </div>
-      )
-    }
-
-    // If coverage_data is an object, render it as a table
-    if (typeof insurance.coverage_data === 'object' && !Array.isArray(insurance.coverage_data)) {
-      const entries = Object.entries(insurance.coverage_data)
-      
-      if (entries.length === 0) {
-        return (
-          <div className="text-center py-8">
-            <p className="text-gray-500 dark:text-gray-400">
-              Coverage data is empty.
-            </p>
-          </div>
-        )
-      }
-
-      return (
-        <div className="space-y-4">
-          {entries.map(([key, value]) => (
-            <div key={key} className="border-b border-gray-200 dark:border-gray-700 pb-4 last:border-0">
-              <h4 className="font-semibold text-gray-900 dark:text-white mb-2 capitalize">
-                {key.replace(/_/g, ' ')}
-              </h4>
-              {typeof value === 'object' && value !== null ? (
-                <div className="ml-4 space-y-2">
-                  {Object.entries(value as Record<string, any>).map(([subKey, subValue]) => (
-                    <div key={subKey} className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400 capitalize">
-                        {subKey.replace(/_/g, ' ')}:
-                      </span>
-                      <span className="text-gray-900 dark:text-white font-medium">
-                        {String(subValue)}
-                      </span>
+        {Object.entries(coveragesByDomain).map(([domain, coverages]) => (
+          <div key={domain} className="border-b border-gray-200 dark:border-gray-700 pb-4 last:border-0">
+            <h4 className="font-semibold text-gray-900 dark:text-white mb-3 capitalize text-lg">
+              {domain}
+            </h4>
+            <div className="space-y-3">
+              {coverages.map((coverage) => (
+                <div key={coverage.id} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <h5 className="font-medium text-gray-900 dark:text-white capitalize">
+                      {coverage.service_type.replace(/_/g, ' ')}
+                    </h5>
+                    {coverage.confidence_score !== null && (
+                      <div className="flex items-center space-x-1">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Confidence:</span>
+                        <div className="flex items-center space-x-0.5">
+                          {[1, 2, 3, 4, 5].map((i) => (
+                            <div
+                              key={i}
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                i <= (coverage.confidence_score || 0) * 5
+                                  ? 'bg-green-500'
+                                  : 'bg-gray-300 dark:bg-gray-600'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    {coverage.coverage_percent !== null && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400">Coverage: </span>
+                        <span className="font-semibold text-green-600 dark:text-green-400">
+                          {coverage.coverage_percent}%
+                        </span>
+                      </div>
+                    )}
+                    {coverage.max_amount !== null && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400">Max Amount: </span>
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {coverage.max_amount} {coverage.currency || 'CLP'}
+                        </span>
+                      </div>
+                    )}
+                    {coverage.copay_amount !== null && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400">Copay: </span>
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {coverage.copay_amount}%
+                        </span>
+                      </div>
+                    )}
+                    {coverage.deductible_amount !== null && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400">Deductible: </span>
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {coverage.deductible_amount} {coverage.currency || 'CLP'}
+                        </span>
+                      </div>
+                    )}
+                    {coverage.frequency_limit && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400">Frequency: </span>
+                        <span className="font-medium text-gray-900 dark:text-white capitalize">
+                          {coverage.frequency_limit}
+                        </span>
+                      </div>
+                    )}
+                    {coverage.waiting_period_days !== null && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400">Waiting Period: </span>
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {coverage.waiting_period_days} days
+                        </span>
+                      </div>
+                    )}
+                    {coverage.specialty && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400">Specialty: </span>
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {coverage.specialty}
+                        </span>
+                      </div>
+                    )}
+                    {coverage.is_emergency !== null && coverage.is_emergency && (
+                      <div>
+                        <span className="text-xs px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 rounded">
+                          Emergency Coverage
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  {coverage.exclusions && (
+                    <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                      <p className="text-xs text-orange-600 dark:text-orange-400">
+                        <strong>Exclusions:</strong> {coverage.exclusions}
+                      </p>
                     </div>
-                  ))}
+                  )}
+                  <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Source: {coverage.source === 'ai' ? 'AI Analysis' : 'Manual Entry'}
+                  </div>
                 </div>
-              ) : (
-                <p className="text-gray-700 dark:text-gray-300">
-                  {String(value)}
-                </p>
-              )}
+              ))}
             </div>
-          ))}
-        </div>
-      )
-    }
+          </div>
+        ))}
+      </div>
+    )
+  }
 
-    // If it's an array or other format, render as JSON
+  const renderLegacyCoverageData = () => {
+    if (!insurance.coverage_data) return null
+
     return (
-      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-        <pre className="text-sm text-gray-700 dark:text-gray-300 overflow-auto">
-          {JSON.stringify(insurance.coverage_data, null, 2)}
-        </pre>
+      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Legacy coverage data:</p>
+        <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+          <pre className="text-sm text-gray-700 dark:text-gray-300 overflow-auto">
+            {JSON.stringify(insurance.coverage_data, null, 2)}
+          </pre>
+        </div>
       </div>
     )
   }
@@ -325,7 +497,10 @@ export function CoverageDrawer({ insurance, isOpen, onClose }: CoverageDrawerPro
                   </button>
                 )}
                 <button
-                  onClick={() => setIsEditing(true)}
+                  onClick={() => {
+                    setShowDeleteConfirm(false)
+                    setIsEditing(true)
+                  }}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
                   aria-label="Edit coverage"
                 >
@@ -333,6 +508,16 @@ export function CoverageDrawer({ insurance, isOpen, onClose }: CoverageDrawerPro
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
                   <span>Edit</span>
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2"
+                  aria-label="Delete insurance"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  <span>Delete</span>
                 </button>
               </>
             ) : (
@@ -373,6 +558,29 @@ export function CoverageDrawer({ insurance, isOpen, onClose }: CoverageDrawerPro
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
+            {showDeleteConfirm && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                <p className="text-red-800 dark:text-red-200 mb-4 font-medium">
+                  Are you sure you want to delete this insurance? This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    disabled={isDeleting}
+                    className="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
             {error && (
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 px-4 py-3 rounded">
                 <p className="font-medium">{error}</p>
@@ -463,6 +671,41 @@ export function CoverageDrawer({ insurance, isOpen, onClose }: CoverageDrawerPro
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    What does it cover?
+                  </label>
+                  <div className="space-y-2 border border-gray-300 dark:border-gray-600 rounded-md p-3 bg-gray-50 dark:bg-gray-800">
+                    {COVERAGE_TYPES.map((coverageType) => (
+                      <label
+                        key={coverageType}
+                        className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 p-2 rounded"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={(formData.coverage_types || []).includes(coverageType)}
+                          onChange={(e) => {
+                            const currentTypes = formData.coverage_types || []
+                            if (e.target.checked) {
+                              setFormData({
+                                ...formData,
+                                coverage_types: [...currentTypes, coverageType],
+                              })
+                            } else {
+                              setFormData({
+                                ...formData,
+                                coverage_types: currentTypes.filter((ct) => ct !== coverageType),
+                              })
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600"
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">{coverageType}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
                   <label htmlFor="policy_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Policy ID *
                   </label>
@@ -530,8 +773,44 @@ export function CoverageDrawer({ insurance, isOpen, onClose }: CoverageDrawerPro
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                     Coverage Details
                   </h3>
-                  {renderCoverageData()}
+                  {renderNormalizedCoverages()}
                 </div>
+
+                {/* Raw Analysis Section */}
+                {rawAnalysis && (
+                  <div className="pt-6 border-t border-gray-200 dark:border-gray-800">
+                    <button
+                      onClick={() => setShowRawAnalysis(!showRawAnalysis)}
+                      className="flex items-center justify-between w-full text-left mb-2"
+                    >
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        Raw AI Analysis
+                      </h3>
+                      <svg
+                        className={`w-5 h-5 text-gray-500 dark:text-gray-400 transition-transform ${
+                          showRawAnalysis ? 'transform rotate-180' : ''
+                        }`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {rawAnalysis.model_version && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                        Model: {rawAnalysis.model_version} • Extracted: {new Date(rawAnalysis.extracted_at).toLocaleDateString()}
+                      </p>
+                    )}
+                    {showRawAnalysis && (
+                      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 mt-2">
+                        <pre className="text-sm text-gray-700 dark:text-gray-300 overflow-auto max-h-96">
+                          {JSON.stringify(rawAnalysis.raw_json, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* PDF Link */}
                 {insurance.pdf_url && (

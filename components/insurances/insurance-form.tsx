@@ -14,13 +14,25 @@ interface InsuranceFormProps {
 }
 
 const INSURANCE_TYPES = [
-  'Fonasa',
   'Isapre',
-  'Complementario',
+  'Fonasa',
+  'Seguro Complementario',
+  'Seguro Dental',
+  'Seguro de Vida',
+  'Seguro de Accidentes',
+  'Seguro Catastrófico',
+  'Seguro Oncológico',
+] as const
+
+const COVERAGE_TYPES = [
+  'Consultas médicas y exámenes',
+  'Medicamentos',
+  'Hospitalizaciones',
   'Dental',
-  'Oncológico',
-  'Accidentes personales',
-  'Catastrófico',
+  'Salud mental',
+  'Vida',
+  'Accidentes',
+  'Visión',
 ] as const
 
 const INSURANCE_PROVIDERS = [
@@ -157,6 +169,7 @@ export function InsuranceForm({ insurance, onSubmit, onCancel }: InsuranceFormPr
         provider_name: formData.provider_name.trim(),
         policy_id: formData.policy_id.trim(),
         insurance_type: formData.insurance_type || null,
+        coverage_types: (formData.coverage_types && formData.coverage_types.length > 0) ? formData.coverage_types : null,
         price: price,
         currency: formData.price ? formData.currency : null,
         logo_url: formData.logo_url || null,
@@ -189,8 +202,8 @@ export function InsuranceForm({ insurance, onSubmit, onCancel }: InsuranceFormPr
             }
           }, 2000)
         }
-      } else if (!insurance && !result) {
-        // If no PDF or no result returned, navigate immediately
+      } else if (!insurance) {
+        // If no analysis is needed, navigate immediately after creation
         router.push('/insurances')
         router.refresh()
       }
@@ -212,26 +225,7 @@ export function InsuranceForm({ insurance, onSubmit, onCancel }: InsuranceFormPr
         </div>
       )}
 
-      <div>
-        <label htmlFor="insurance_type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Insurance Type *
-        </label>
-        <select
-          id="insurance_type"
-          required
-          value={formData.insurance_type}
-          onChange={(e) => setFormData({ ...formData, insurance_type: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-        >
-          <option value="">Select insurance type</option>
-          {INSURANCE_TYPES.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </select>
-      </div>
-
+      {/* 1. Insurance Provider (First) */}
       <div>
         <label htmlFor="provider_name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Insurance Provider *
@@ -286,6 +280,67 @@ export function InsuranceForm({ insurance, onSubmit, onCancel }: InsuranceFormPr
         </p>
       </div>
 
+      {/* 2. Type of Insurance (Second) */}
+      <div>
+        <label htmlFor="insurance_type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Type of Insurance *
+        </label>
+        <select
+          id="insurance_type"
+          required
+          value={formData.insurance_type}
+          onChange={(e) => setFormData({ ...formData, insurance_type: e.target.value })}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+        >
+          <option value="">Select insurance type</option>
+          {INSURANCE_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {type}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* 3. What does it cover? (Third) */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          What does it cover?
+        </label>
+        <div className="space-y-2 border border-gray-300 dark:border-gray-600 rounded-md p-3 bg-gray-50 dark:bg-gray-800">
+          {COVERAGE_TYPES.map((coverageType) => (
+            <label
+              key={coverageType}
+              className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 p-2 rounded"
+            >
+              <input
+                type="checkbox"
+                checked={(formData.coverage_types || []).includes(coverageType)}
+                onChange={(e) => {
+                  const currentTypes = formData.coverage_types || []
+                  if (e.target.checked) {
+                    setFormData({
+                      ...formData,
+                      coverage_types: [...currentTypes, coverageType],
+                    })
+                  } else {
+                    setFormData({
+                      ...formData,
+                      coverage_types: currentTypes.filter((ct) => ct !== coverageType),
+                    })
+                  }
+                }}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">{coverageType}</span>
+            </label>
+          ))}
+        </div>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          Select all that apply. This helps improve AI analysis accuracy.
+        </p>
+      </div>
+
+      {/* 4. Policy ID (Fourth) */}
       <div>
         <label htmlFor="policy_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Policy ID *
@@ -301,6 +356,7 @@ export function InsuranceForm({ insurance, onSubmit, onCancel }: InsuranceFormPr
         />
       </div>
 
+      {/* 5. Price (Fifth) */}
       <div>
         <label htmlFor="price" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Price (Optional)
@@ -332,6 +388,7 @@ export function InsuranceForm({ insurance, onSubmit, onCancel }: InsuranceFormPr
         </div>
       </div>
 
+      {/* 6. PDF Upload (Sixth) */}
       <div>
         <label htmlFor="pdf" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Policy PDF (Optional)

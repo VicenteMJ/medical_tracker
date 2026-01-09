@@ -47,12 +47,13 @@ export default function EditBillPage({ params }: EditBillPageProps) {
     loadBill()
   }, [billId, router])
 
-  const handleSubmit = async (data: Omit<Bill, 'id' | 'created_at'>) => {
-    if (!billId) return
+  const handleSubmit = async (data: Omit<Bill, 'id' | 'created_at'>): Promise<Bill> => {
+    if (!billId) throw new Error('Bill ID is required')
     try {
-      await updateBill(billId, data)
+      const updatedBill = await updateBill(billId, data)
       router.push(`/bills/${billId}`)
       router.refresh()
+      return updatedBill
     } catch (error) {
       throw error
     }

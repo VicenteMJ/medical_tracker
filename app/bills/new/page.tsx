@@ -13,10 +13,10 @@ function NewBillForm() {
   const resultId = searchParams.get('result_id') || undefined
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleSubmit = async (data: Omit<Bill, 'id' | 'created_at'>) => {
+  const handleSubmit = async (data: Omit<Bill, 'id' | 'created_at'>): Promise<Bill> => {
     setIsSubmitting(true)
     try {
-      await createBill(data)
+      const createdBill = await createBill(data)
       if (resultId) {
         router.push(`/results/${resultId}`)
       } else if (appointmentId) {
@@ -25,6 +25,7 @@ function NewBillForm() {
         router.push('/bills')
       }
       router.refresh()
+      return createdBill
     } catch (error) {
       throw error
     } finally {
