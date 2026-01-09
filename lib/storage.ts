@@ -147,3 +147,59 @@ export async function uploadInsurancePDF(file: File, insuranceId?: string): Prom
   return urlData.publicUrl
 }
 
+/**
+ * Uploads a PDF or image file for a prescription to Supabase Storage
+ * @param file - The PDF or image file to upload (PDF, JPG, JPEG, PNG)
+ * @param prescriptionId - Optional prescription ID to organize files. If not provided, generates a unique name
+ * @returns The public URL of the uploaded file
+ */
+export async function uploadPrescriptionFile(file: File, prescriptionId?: string): Promise<string> {
+  // Validate file type (PDF or images)
+  const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('Only PDF, JPG, JPEG, and PNG files are allowed')
+  }
+
+  // Validate file size (max 10MB)
+  const maxSize = 10 * 1024 * 1024 // 10MB
+  if (file.size > maxSize) {
+    throw new Error('File size must be less than 10MB')
+  }
+
+  // Determine file extension
+  const extension = file.type === 'application/pdf' 
+    ? 'pdf' 
+    : file.type === 'image/jpeg' || file.type === 'image/jpg'
+    ? 'jpg'
+    : 'png'
+
+  // Generate a unique file name
+  const timestamp = Date.now()
+  const randomString = Math.random().toString(36).substring(2, 15)
+  const fileName = prescriptionId 
+    ? `${prescriptionId}/${timestamp}-${randomString}.${extension}`
+    : `prescriptions/${timestamp}-${randomString}.${extension}`
+
+  // Upload file to Supabase Storage
+  const { data, error } = await supabase.storage
+    .from('prescriptions')
+    .upload(fileName, file, {
+      contentType: file.type,
+      upsert: false, // Don't overwrite existing files
+    })
+
+  if (error) {
+    throw new Error(`Failed to upload file: ${error.message}`)
+  }
+
+  // Get public URL
+  const { data: urlData } = supabase.storage
+    .from('prescriptions')
+    .getPublicUrl(data.path)
+
+  if (!urlData?.publicUrl) {
+    throw new Error('Failed to get public URL for uploaded file')
+  }
+
+  return urlData.publicUrl
+}

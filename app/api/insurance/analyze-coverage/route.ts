@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { extractTextFromPDFURL } from '@/lib/pdf-extractor'
 import { analyzeInsuranceCoverage } from '@/lib/ai-coverage-analyzer'
-import { updateInsurance } from '@/lib/insurances'
+import { updateInsurance, createInsuranceCoverage } from '@/lib/insurances'
+import { normalizeGeminiOutput } from '@/lib/coverage-normalizer'
+import { extractGlobalRules } from '@/lib/global-rules-extractor'
 
 export async function POST(request: NextRequest) {
   try {
@@ -66,11 +68,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Analyze with AI
-    let coverageData: Record<string, any>
+    // Analyze with AI (pass insurance type and coverage types for optimized search)
+    let analysisResult: { coverageData: Record<string, any>; modelVersion: string }
     try {
       console.log('Starting AI analysis...')
-      coverageData = await analyzeInsuranceCoverage(pdfText)
+      console.log('Insurance type:', insurance.insurance_type)
+      console.log('Coverage types:', insurance.coverage_types)
+      analysisResult = await analyzeInsuranceCoverage(
+        pdfText,
+        insurance.insurance_type,
+        insurance.coverage_types
+      )
       console.log('AI analysis completed successfully')
     } catch (error) {
       console.error('AI analysis error:', error)
@@ -80,15 +88,108 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Update insurance record with coverage data
+    const { coverageData, modelVersion } = analysisResult
+
+    // Save raw analysis to insurance_raw_analysis table
+    try {
+      const { error: rawAnalysisError } = await supabase
+        .from('insurance_raw_analysis')
+        .insert({
+          insurance_id: insuranceId,
+          raw_json: coverageData,
+          model_version: modelVersion,
+        })
+
+      if (rawAnalysisError) {
+        console.error('Failed to save raw analysis:', rawAnalysisError)
+        // Don't fail the request, but log the error
+      }
+    } catch (error) {
+      console.error('Error saving raw analysis:', error)
+      // Continue with normalization even if raw analysis save fails
+    }
+
+    // Extract and save global rules
+    try {
+      const globalRules = extractGlobalRules(coverageData)
+      
+      if (globalRules) {
+        // Delete existing AI-generated global rules for this insurance
+        await supabase
+          .from('insurance_global_rules')
+          .delete()
+          .eq('insurance_id', insuranceId)
+          .eq('source', 'ai')
+
+        // Insert global rules
+        const { error: globalRulesError } = await supabase
+          .from('insurance_global_rules')
+          .insert({
+            insurance_id: insuranceId,
+            deductible_by_family_type: globalRules.deductible_by_family_type,
+            annual_reimbursement_limit_per_beneficiary: globalRules.annual_reimbursement_limit_per_beneficiary,
+            annual_reimbursement_limit_currency: globalRules.annual_reimbursement_limit_currency,
+            special_conditions: globalRules.special_conditions,
+            coverage_abroad: globalRules.coverage_abroad,
+            source: 'ai',
+          })
+
+        if (globalRulesError) {
+          console.error('Failed to save global rules:', globalRulesError)
+          // Don't fail the request, but log the error
+        } else {
+          console.log('Saved global rules successfully')
+        }
+      }
+    } catch (error) {
+      console.error('Error extracting/saving global rules:', error)
+      // Continue even if global rules extraction fails
+    }
+
+    // Normalize Gemini output and insert into insurance_coverages
+    let normalizedCoverages: any[] = []
+    try {
+      console.log('Normalizing coverage data...')
+      const coveragesToInsert = normalizeGeminiOutput(coverageData, insuranceId)
+      
+      // Delete existing AI-generated coverages for this insurance (to avoid duplicates)
+      await supabase
+        .from('insurance_coverages')
+        .delete()
+        .eq('insurance_id', insuranceId)
+        .eq('source', 'ai')
+
+      // Insert normalized coverages
+      if (coveragesToInsert.length > 0) {
+        const { data, error: insertError } = await supabase
+          .from('insurance_coverages')
+          .insert(coveragesToInsert)
+          .select()
+
+        if (insertError) {
+          console.error('Failed to insert normalized coverages:', insertError)
+          throw new Error(`Failed to insert normalized coverages: ${insertError.message}`)
+        }
+
+        normalizedCoverages = data || []
+        console.log(`Inserted ${normalizedCoverages.length} normalized coverage rows`)
+      }
+    } catch (error) {
+      console.error('Normalization error:', error)
+      // Continue even if normalization fails - we still have raw data
+    }
+
+    // Update insurance record with coverage_data for backward compatibility
     try {
       const updatedInsurance = await updateInsurance(insuranceId, {
-        coverage_data: coverageData,
+        coverage_data: coverageData, // Keep for backward compatibility
       })
 
       return NextResponse.json({
         success: true,
-        coverage_data: coverageData,
+        coverage_data: coverageData, // Raw data
+        normalized_coverages: normalizedCoverages, // Normalized rows
+        model_version: modelVersion,
         insurance: updatedInsurance,
       })
     } catch (error) {

@@ -72,3 +72,4 @@ export function AppointmentsList({ initialAppointments }: AppointmentsListProps)
 
 
 
+

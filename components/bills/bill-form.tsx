@@ -1,14 +1,16 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Bill, Appointment, Result } from '@/types/database'
+import { Bill, Appointment, Result, Insurance } from '@/types/database'
 import { getAppointments } from '@/lib/appointments'
 import { getResults } from '@/lib/results'
 import { uploadBillPDF } from '@/lib/storage'
+import { getInsurances } from '@/lib/insurances'
+import { getBillInsurances, setBillInsurances } from '@/lib/bills'
 
 interface BillFormProps {
   bill?: Bill
-  onSubmit: (data: Omit<Bill, 'id' | 'created_at'>) => Promise<void>
+  onSubmit: (data: Omit<Bill, 'id' | 'created_at'>) => Promise<Bill | void>
   onCancel: () => void
   defaultAppointmentId?: string
   defaultResultId?: string
@@ -28,10 +30,13 @@ export function BillForm({ bill, onSubmit, onCancel, defaultAppointmentId, defau
   })
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [results, setResults] = useState<Result[]>([])
+  const [insurances, setInsurances] = useState<Insurance[]>([])
+  const [selectedInsuranceIds, setSelectedInsuranceIds] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loadingAppointments, setLoadingAppointments] = useState(true)
   const [loadingResults, setLoadingResults] = useState(true)
+  const [loadingInsurances, setLoadingInsurances] = useState(true)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string>('')
@@ -40,21 +45,37 @@ export function BillForm({ bill, onSubmit, onCancel, defaultAppointmentId, defau
   useEffect(() => {
     async function loadData() {
       try {
-        const [appointmentsData, resultsData] = await Promise.all([
+        const [appointmentsData, resultsData, insurancesData] = await Promise.all([
           getAppointments(),
           getResults(),
+          getInsurances(),
         ])
         setAppointments(appointmentsData)
         setResults(resultsData)
+        setInsurances(insurancesData)
       } catch (err) {
         console.error('Failed to load data:', err)
       } finally {
         setLoadingAppointments(false)
         setLoadingResults(false)
+        setLoadingInsurances(false)
       }
     }
     loadData()
   }, [])
+
+  useEffect(() => {
+    async function loadBillInsurances() {
+      if (!bill?.id) return
+      try {
+        const billInsurances = await getBillInsurances(bill.id)
+        setSelectedInsuranceIds(billInsurances.map(bi => bi.insurance_id))
+      } catch (err) {
+        console.error('Failed to load bill insurances:', err)
+      }
+    }
+    loadBillInsurances()
+  }, [bill?.id])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -124,7 +145,8 @@ export function BillForm({ bill, onSubmit, onCancel, defaultAppointmentId, defau
         return
       }
 
-      await onSubmit({
+      // Create or update the bill
+      const billData = {
         appointment_id: formData.appointment_id || null,
         result_id: formData.result_id || null,
         amount: amount,
@@ -134,13 +156,36 @@ export function BillForm({ bill, onSubmit, onCancel, defaultAppointmentId, defau
         payment_method: formData.payment_method || null,
         receipt_url: receiptUrl,
         notes: formData.notes || null,
-      })
+      }
+
+      const result = await onSubmit(billData)
+      
+      // After successful submission, save insurance relationships
+      const billId = bill?.id || (result as Bill)?.id
+      if (billId) {
+        try {
+          await setBillInsurances(billId, selectedInsuranceIds)
+        } catch (insuranceError) {
+          console.error('Failed to save insurance relationships:', insuranceError)
+          // Don't throw - the bill was saved successfully, insurance is secondary
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setIsSubmitting(false)
       setUploadProgress('')
     }
+  }
+
+  const handleInsuranceToggle = (insuranceId: string) => {
+    setSelectedInsuranceIds(prev => {
+      if (prev.includes(insuranceId)) {
+        return prev.filter(id => id !== insuranceId)
+      } else {
+        return [...prev, insuranceId]
+      }
+    })
   }
 
   return (
@@ -286,6 +331,45 @@ export function BillForm({ bill, onSubmit, onCancel, defaultAppointmentId, defau
             </span>
           )}
         </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Which one of this ones can cover part of this bill?
+        </label>
+        {loadingInsurances ? (
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading insurances...</p>
+        ) : insurances.length === 0 ? (
+          <p className="text-sm text-gray-500 dark:text-gray-400">No insurances available. Add insurances first.</p>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {insurances.map((insurance) => {
+              const isSelected = selectedInsuranceIds.includes(insurance.id)
+              const displayName = insurance.insurance_type
+                ? `${insurance.provider_name} - ${insurance.insurance_type}`
+                : insurance.provider_name
+              return (
+                <button
+                  key={insurance.id}
+                  type="button"
+                  onClick={() => handleInsuranceToggle(insurance.id)}
+                  className={`px-4 py-3 rounded-lg text-sm font-medium transition-all ${
+                    isSelected
+                      ? 'bg-blue-100 dark:bg-blue-900 border-2 border-blue-500 text-blue-900 dark:text-blue-100'
+                      : 'bg-gray-50 dark:bg-gray-800 border-2 border-transparent text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  {displayName}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        {selectedInsuranceIds.length > 0 && (
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {selectedInsuranceIds.length} insurance{selectedInsuranceIds.length !== 1 ? 's' : ''} selected
+          </p>
+        )}
       </div>
 
       <div>
