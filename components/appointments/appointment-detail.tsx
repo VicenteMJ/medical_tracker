@@ -8,6 +8,8 @@ import { useRouter } from 'next/navigation'
 import { deleteAppointment } from '@/lib/appointments'
 import { getResultsByAppointment } from '@/lib/results'
 import { getBillsByAppointment, getBillsByResultIds } from '@/lib/bills'
+import { shouldShowFollowupWizard } from '@/lib/appointment-followup'
+import { AppointmentFollowupWizard } from './appointment-followup-wizard'
 
 interface AppointmentDetailProps {
   appointment: Appointment
@@ -21,6 +23,8 @@ export function AppointmentDetail({ appointment }: AppointmentDetailProps) {
   const [appointmentBills, setAppointmentBills] = useState<Bill[]>([])
   const [resultBills, setResultBills] = useState<Bill[]>([])
   const [loadingRelated, setLoadingRelated] = useState(true)
+  const [showFollowupWizard, setShowFollowupWizard] = useState(false)
+  const [needsFollowup, setNeedsFollowup] = useState(false)
 
   useEffect(() => {
     async function loadRelated() {
@@ -49,6 +53,17 @@ export function AppointmentDetail({ appointment }: AppointmentDetailProps) {
     loadRelated()
   }, [appointment.id])
 
+  useEffect(() => {
+    // Check if appointment needs follow-up
+    const needsFollowupCheck = shouldShowFollowupWizard(appointment)
+    setNeedsFollowup(needsFollowupCheck)
+    
+    // Auto-open wizard if needed (only once on mount)
+    if (needsFollowupCheck) {
+      setShowFollowupWizard(true)
+    }
+  }, [appointment])
+
   const handleDelete = async () => {
     setIsDeleting(true)
     try {
@@ -69,6 +84,14 @@ export function AppointmentDetail({ appointment }: AppointmentDetailProps) {
           Appointment Details
         </h1>
         <div className="flex gap-3">
+          {needsFollowup && (
+            <button
+              onClick={() => setShowFollowupWizard(true)}
+              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+            >
+              Complete Follow-up
+            </button>
+          )}
           <Link
             href={`/appointments/${appointment.id}/edit`}
             className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
@@ -130,6 +153,21 @@ export function AppointmentDetail({ appointment }: AppointmentDetailProps) {
               Medical Center
             </h3>
             <p className="text-gray-900 dark:text-white">{appointment.medical_center}</p>
+          </div>
+        )}
+
+        {appointment.status && (
+          <div>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+              Status
+            </h3>
+            <p className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+              appointment.status === 'attended' 
+                ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300'
+                : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300'
+            }`}>
+              {appointment.status === 'attended' ? 'Attended' : 'Missed'}
+            </p>
           </div>
         )}
 
@@ -316,6 +354,18 @@ export function AppointmentDetail({ appointment }: AppointmentDetailProps) {
           </Link>
         </div>
       </div>
+
+      {showFollowupWizard && (
+        <AppointmentFollowupWizard
+          appointment={appointment}
+          onComplete={() => {
+            setShowFollowupWizard(false)
+            setNeedsFollowup(false)
+            router.refresh()
+          }}
+          onClose={() => setShowFollowupWizard(false)}
+        />
+      )}
     </div>
   )
 }
