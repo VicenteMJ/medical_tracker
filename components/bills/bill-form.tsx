@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Bill, Appointment, Result, Insurance } from '@/types/database'
+import { Bill, Appointment, Result, Insurance, Prescription } from '@/types/database'
 import { getAppointments } from '@/lib/appointments'
 import { getResults } from '@/lib/results'
+import { getPrescriptions } from '@/lib/prescriptions'
 import { uploadBillPDF } from '@/lib/storage'
 import { getInsurances } from '@/lib/insurances'
 import { getBillInsurances, setBillInsurances } from '@/lib/bills'
@@ -14,12 +15,14 @@ interface BillFormProps {
   onCancel: () => void
   defaultAppointmentId?: string
   defaultResultId?: string
+  defaultPrescriptionId?: string
 }
 
-export function BillForm({ bill, onSubmit, onCancel, defaultAppointmentId, defaultResultId }: BillFormProps) {
+export function BillForm({ bill, onSubmit, onCancel, defaultAppointmentId, defaultResultId, defaultPrescriptionId }: BillFormProps) {
   const [formData, setFormData] = useState({
     appointment_id: bill?.appointment_id || defaultAppointmentId || '',
     result_id: bill?.result_id || defaultResultId || '',
+    prescription_id: bill?.prescription_id || defaultPrescriptionId || '',
     amount: bill?.amount.toString() || '',
     insurance_coverage: bill?.insurance_coverage?.toString() || '',
     currency: bill?.currency || 'USD',
@@ -30,12 +33,14 @@ export function BillForm({ bill, onSubmit, onCancel, defaultAppointmentId, defau
   })
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [results, setResults] = useState<Result[]>([])
+  const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
   const [insurances, setInsurances] = useState<Insurance[]>([])
   const [selectedInsuranceIds, setSelectedInsuranceIds] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loadingAppointments, setLoadingAppointments] = useState(true)
   const [loadingResults, setLoadingResults] = useState(true)
+  const [loadingPrescriptions, setLoadingPrescriptions] = useState(true)
   const [loadingInsurances, setLoadingInsurances] = useState(true)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -45,19 +50,22 @@ export function BillForm({ bill, onSubmit, onCancel, defaultAppointmentId, defau
   useEffect(() => {
     async function loadData() {
       try {
-        const [appointmentsData, resultsData, insurancesData] = await Promise.all([
+        const [appointmentsData, resultsData, prescriptionsData, insurancesData] = await Promise.all([
           getAppointments(),
           getResults(),
+          getPrescriptions(),
           getInsurances(),
         ])
         setAppointments(appointmentsData)
         setResults(resultsData)
+        setPrescriptions(prescriptionsData)
         setInsurances(insurancesData)
       } catch (err) {
         console.error('Failed to load data:', err)
       } finally {
         setLoadingAppointments(false)
         setLoadingResults(false)
+        setLoadingPrescriptions(false)
         setLoadingInsurances(false)
       }
     }
@@ -149,6 +157,7 @@ export function BillForm({ bill, onSubmit, onCancel, defaultAppointmentId, defau
       const billData = {
         appointment_id: formData.appointment_id || null,
         result_id: formData.result_id || null,
+        prescription_id: formData.prescription_id || null,
         amount: amount,
         insurance_coverage: insuranceCoverage,
         currency: formData.currency,
@@ -250,6 +259,39 @@ export function BillForm({ bill, onSubmit, onCancel, defaultAppointmentId, defau
         </select>
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           Note: A bill can be associated with either an appointment or a test result, not both.
+        </p>
+      </div>
+
+      <div>
+        <label htmlFor="prescription_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Related Prescription (Optional)
+        </label>
+        <select
+          id="prescription_id"
+          value={formData.prescription_id}
+          onChange={(e) => {
+            setFormData({ 
+              ...formData, 
+              prescription_id: e.target.value
+            })
+          }}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+          disabled={loadingPrescriptions}
+        >
+          <option value="">None</option>
+          {prescriptions.map((prescription) => {
+            const prescriptionDate = new Date(prescription.issue_date).toLocaleDateString()
+            const prescriptionType = prescription.prescription_type
+            const displayName = prescription.name || `Prescription ${prescriptionType}`
+            return (
+              <option key={prescription.id} value={prescription.id}>
+                {displayName} - {prescriptionDate}
+              </option>
+            )
+          })}
+        </select>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          Link this bill to a prescription (e.g., for pharmacy purchases).
         </p>
       </div>
 

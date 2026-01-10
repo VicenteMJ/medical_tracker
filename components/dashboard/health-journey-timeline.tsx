@@ -76,6 +76,44 @@ function ChevronDownIcon({ className }: { className?: string }) {
   )
 }
 
+function CheckCircleIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  )
+}
+
+function XCircleIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  )
+}
+
 export function HealthJourneyTimeline({ events }: HealthJourneyTimelineProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   const [expandedData, setExpandedData] = useState<Map<string, ExpandedData>>(new Map())
@@ -220,6 +258,16 @@ export function HealthJourneyTimeline({ events }: HealthJourneyTimelineProps) {
             let subtitle = ''
             let href = ''
 
+            // Get appointment status for icon
+            let statusIcon = null
+            if (isAppointment && event.appointment) {
+              if (event.appointment.status === 'attended') {
+                statusIcon = <CheckCircleIcon className="w-5 h-5 text-green-500" />
+              } else if (event.appointment.status === 'missed') {
+                statusIcon = <XCircleIcon className="w-5 h-5 text-red-500" />
+              }
+            }
+
             if (isAppointment && event.appointment) {
               title = `${event.appointment.specialty || 'Appointment'} - ${event.appointment.doctor_name}`
               const date = new Date(event.appointment.date)
@@ -259,13 +307,22 @@ export function HealthJourneyTimeline({ events }: HealthJourneyTimelineProps) {
                       className="w-full p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors group"
                     >
                       <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">
-                            {title}
-                          </h3>
-                          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                            {subtitle}
-                          </p>
+                        <div className="flex-1 min-w-0 flex items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                                {title}
+                              </h3>
+                              {isAppointment && statusIcon && (
+                                <span className="flex-shrink-0" title={event.appointment?.status === 'attended' ? 'Attended' : 'Missed'}>
+                                  {statusIcon}
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                              {subtitle}
+                            </p>
+                          </div>
                         </div>
                         <ChevronDownIcon
                           className={`w-5 h-5 text-gray-400 transition-transform flex-shrink-0 ml-2 ${

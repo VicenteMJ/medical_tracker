@@ -5,6 +5,7 @@ export interface Appointment {
   specialty: string | null
   medical_center: string | null
   notes: string | null
+  status: 'missed' | 'attended' | null
   created_at: string
   updated_at: string
 }
@@ -26,6 +27,7 @@ export interface Bill {
   id: string
   appointment_id: string | null
   result_id: string | null
+  prescription_id: string | null
   amount: number
   insurance_coverage: number | null
   currency: string
@@ -193,6 +195,11 @@ export interface Database {
         Row: BillInsurance
         Insert: Omit<BillInsurance, 'id' | 'created_at'>
         Update: Partial<Omit<BillInsurance, 'id' | 'created_at'>>
+      }
+      pending_actions: {
+        Row: PendingAction
+        Insert: Omit<PendingAction, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<PendingAction, 'id' | 'created_at' | 'updated_at'>>
       }
     }
   }
